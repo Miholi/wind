@@ -1,0 +1,60 @@
+{
+  "name": "deepseek-desktop",
+  "version": "1.0.0",
+  "description": "DeepSeek 对话桌面客户端（API 模式 + 网页模式）",
+  "main": "main.js",
+  "author": "wind",
+  "license": "MIT",
+  "scripts": {
+    "dev": "electron .",
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --win nsis"
+  },
+  "dependencies": {
+    "highlight.js": "^11.12.0",
+    "katex": "^0.18.4",
+    "marked": "^12.0.2",
+    "mermaid": "^11.17.0"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.wind.deepseek-desktop",
+    "productName": "DeepSeek Desktop",
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "assets/**/*",
+      "node_modules/marked/**/*",
+      "node_modules/highlight.js/**/*",
+      "node_modules/katex/**/*",
+      "node_modules/mermaid/**/*"
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "assets"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "DeepSeek"
+    }
+  }
+}
