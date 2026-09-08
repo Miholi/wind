@@ -34,7 +34,8 @@
 wind/
 ├── main.js                  # Electron 主进程：窗口、托盘、全局快捷键、外链拦截、会话同步
 ├── preload.js               # 预加载脚本：selectPlatform / onLoading 两个安全桥接接口
-├── package.json             # 项目配置 + electron-builder 打包配置
+├── package.json             # 项目配置 + electron-builder 打包配置（含 Electron 下载镜像）
+├── .npmrc                   # npm 侧国内镜像（Electron 运行时 / electron-builder 二进制）
 ├── assets/                  # 应用图标资源（icon.ico / icon.png）
 ├── renderer/                # 渲染进程（界面层）
 │   ├── index.html           #   页面骨架（splash 启动页 + BrowserView 容器）
@@ -94,13 +95,10 @@ wind/
 ### 安装依赖
 
 ```bash
-# 如果下载速度慢，建议使用淘宝镜像
-npm install --registry=https://registry.npmmirror.com
-
-# 或者设置环境变量（Windows）
-set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
 npm install
 ```
+
+> ✅ 项目已内置国内镜像配置（`.npmrc`）：Electron 运行时与 electron-builder 构建工具自动走 npmmirror，克隆后开箱即可安装/打包，无需再手动设置 `ELECTRON_MIRROR`。若 npm 包本身下载慢，可追加 `--registry=https://registry.npmmirror.com`。
 
 ### 开发运行
 
@@ -134,6 +132,10 @@ npm run pack     # 仅输出免安装目录（不打包 exe）
 #### 🧹 工程清理与文档
 - 🔧 清理根目录误生成的 Windows 保留名文件 `nul`（该文件会导致 ripgrep 等工具扫描报错）
 - 📝 README 与当前代码同步：移除已废弃的多平台侧栏、头像上传等历史功能描述，补充图片资源管线说明
+
+#### 🔧 构建优化
+- ✨ 新增 `.npmrc`：Electron 运行时与 electron-builder 二进制统一走 npmmirror 国内镜像，克隆后开箱即可 `npm install` / `npm run pack`，无需手动配置任何镜像环境变量
+- 📝 快速开始文档同步简化（移除手动设置 `ELECTRON_MIRROR` 的旧步骤）
 
 ### v2.0.0 (2024-08-27)
 
