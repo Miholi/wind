@@ -18,6 +18,9 @@
   "build": {
     "appId": "com.wind.aiweb",
     "productName": "AI Web",
+    "electronDownload": {
+      "mirror": "https://npmmirror.com/mirrors/electron/"
+    },
     "files": [
       "main.js",
       "preload.js",
