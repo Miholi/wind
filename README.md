@@ -2,7 +2,7 @@
 
 > 基于 **Electron** 的 AI 网页客户端桌面封装 —— 专为 DeepSeek 打造的轻量桌面窗口，登录态自动持久化。
 
-![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue) ![Electron](https://img.shields.io/badge/Electron-33.4.11-47848F) ![License](https://img.shields.io/badge/license-MIT-green) ![Version](https://img.shields.io/badge/version-2.0.0-orange)
+![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue) ![Electron](https://img.shields.io/badge/Electron-33.4.11-47848F) ![License](https://img.shields.io/badge/license-MIT-green) ![Version](https://img.shields.io/badge/version-2.1.0-orange)
 
 ---
 
@@ -11,36 +11,78 @@
 | 功能 | 说明 |
 |------|------|
 | 🧭 **DeepSeek 专属** | 内置 DeepSeek 官方网页，启动即加载，无需切换平台 |
+| 🖼️ **视觉启动页** | 照片背景 + 暗色遮罩 + Ken Burns 缓慢推镜动效，加载等待不再单调 |
 | 🔐 **登录态持久化** | DeepSeek 使用独立持久化分区（partition），Cookies / 登录状态自动保存 |
-| 🚪 **登录跳转放行** | DeepSeek 的第三方 OAuth 登录跳转（Google / Apple / 微软 / GitHub 等）在应用内完成，不弹出外部浏览器 |
 | 🧱 **安全外链** | 网页内弹窗新开一律交给系统浏览器打开（仅放行 http/https 链接）；页内导航不做拦截 |
-| 🖨️ **系统集成** | 系统托盘（左键唤起主界面 / 右键菜单退出）、全局快捷键 Ctrl+Alt+D 唤起窗口 |
+| 🚀 **会话自动同步** | 窗口在后台停留超过 5 分钟后，唤起时自动重载网页，同步其他客户端产生的新会话 |
+| 🖥️ **系统集成** | 系统托盘（左键唤起主界面 / 右键菜单退出）、全局快捷键 Ctrl+Alt+D 唤起窗口、单实例锁 |
 | ⌨️ **网页区快捷键** | Ctrl+R 刷新、Alt+←/→ 前进后退、Ctrl+=/-/0 缩放、Ctrl+Alt+I 开发者工具，均作用于 DeepSeek 页面 |
-| 🛡️ **内存管理** | 优化内存使用，应用退出时自动清理资源，避免内存泄漏 |
-| 💾 **数据持久化** | 头像设置本地存储，重启后保留配置 |
+| 🛡️ **内存管理** | 应用退出时自动清理 BrowserView 资源，避免内存泄漏 |
+
+## 🎨 启动页设计
+
+启动 / 加载过渡页由一张实拍照片驱动（原图 `angen.jpg`）：
+
+- **背景层**：美化后的照片经降采样 + 重模糊生成轻量背景图（约 29KB），`cover` 铺满并缓慢推镜；
+- **遮罩层**：暗色渐变 + 品牌蓝辉光，保证白色前景文字的对比度；
+- **前景**：DeepSeek 徽标 + 旋转加载环 + 状态文字，尊重系统「减少动态效果」设置（`prefers-reduced-motion`）；
+- 窗口底色与启动页同为深色（`#0f1322`），启动瞬间无白闪。
 
 ## 📂 项目结构
 
 ```text
 wind/
-├── main.js                  # Electron 主进程：窗口、托盘、全局快捷键、头像持久化、外链打开
-├── preload.js               # 预加载脚本：渲染进程 ↔ 主进程的安全桥接
-├── package.json            # 项目配置 + electron-builder 打包配置
+├── main.js                  # Electron 主进程：窗口、托盘、全局快捷键、外链拦截、会话同步
+├── preload.js               # 预加载脚本：selectPlatform / onLoading 两个安全桥接接口
+├── package.json             # 项目配置 + electron-builder 打包配置
 ├── assets/                  # 应用图标资源（icon.ico / icon.png）
 ├── renderer/                # 渲染进程（界面层）
-│   ├── index.html           #   主页面骨架（侧边栏 + BrowserView 容器 + 裁剪弹窗）
-│   ├── css/app.css          #   全局样式
-│   └── js/app.js            #   平台配置、侧边栏渲染、头像管理
+│   ├── index.html           #   页面骨架（splash 启动页 + BrowserView 容器）
+│   ├── css/app.css          #   全局样式（启动页视觉 / 动效）
+│   ├── js/app.js            #   平台配置、启动页状态控制
+│   └── img/
+│       ├── angen-bg.jpg     #   启动页背景（720 宽，约 29KB，由处理脚本生成）
+│       ├── angen.jpg        #   美化后全尺寸照片（1280x720，备用母版）
+│       ├── platform-1.png   #   DeepSeek 徽标（启动页 logo，2.9MB，待优化）
+│       └── brand.png        #   品牌图（当前未被引用）
+├── originals/               # 原图存档（不参与打包）
+│   └── angen-src.jpg        #   原始照片的未修改副本（SHA256 与原件一致）
+├── tools/
+│   └── enhance-angen.ps1    # 图片美化 + 优化处理脚本（可复现全部图片资源）
 └── .gitignore               # Git 忽略规则配置
 ```
+
+## 🖼️ 图片资源管线
+
+启动页照片源自外部原图（`D:\equip\picture\angen.jpg`，**永远只读，绝不修改**）：
+
+1. 原图副本存档于 `originals/angen-src.jpg`（哈希校验与原件一致）；
+2. 运行处理脚本一键生成全部图片资源：
+
+   ```powershell
+   # Windows PowerShell 5.1+（依赖系统自带 System.Drawing）
+   powershell -File tools\enhance-angen.ps1
+   ```
+
+3. 脚本处理流程与输出：
+
+   | 步骤 | 参数 | 输出 |
+   |------|------|------|
+   | 饱和度增强 | +10%（保亮度、不动色相） | — |
+   | 对比度增强 | +7%（中点保持） | — |
+   | USM 锐化 | amount 0.38（清晰度 221 → 432） | `renderer/img/angen.jpg`（q88，约 165KB） |
+   | 背景版 | 720 宽降采样 + 重模糊 + 轻压暗 | `renderer/img/angen-bg.jpg`（q80，约 29KB） |
+
+想调整风格，直接改脚本头部的参数区重跑即可。
 
 ## 🛡️ 安全说明
 
 - ✅ 网页内容运行在独立的 `BrowserView` 中，与主进程隔离（`contextIsolation` + 默认 `sandbox`）；
 - ✅ 弹窗新开链接在主进程完成 scheme 校验（仅 http/https）后统一交给系统浏览器打开；页内导航暂不拦截；
 - ✅ DeepSeek 使用独立持久化分区，登录状态持久化保存；
-- ✅ 优化内存管理，应用退出时自动清理 BrowserView 资源，防止内存泄漏；
-- ✅ 完善的错误处理机制，异常情况下有友好的用户提示。
+- ✅ 页面 UA 内核版本跟随实际 Chromium 版本，避免站点风控误判；
+- ✅ 单实例锁：重复启动自动唤起已有窗口；
+- ✅ 应用退出时自动清理 BrowserView 资源，防止内存泄漏。
 
 ## 🚀 快速开始
 
@@ -73,7 +115,25 @@ npm run dist     # 生成 Windows 安装程序 → dist/ 目录
 npm run pack     # 仅输出免安装目录（不打包 exe）
 ```
 
+> 打包配置只收录 `main.js`、`preload.js`、`renderer/**`、`assets/**`；`originals/` 与 `tools/` 不进入安装包。
+
 ## 📝 更新日志
+
+### v2.1.0 (2026-09-09)
+
+#### 🎨 界面改版
+- ✨ 启动页全新视觉：实拍照片背景 + 暗色可读性遮罩 + Ken Burns 缓慢推镜动效
+- ✨ 支持系统「减少动态效果」设置（自动停用背景动效与加载环动画）
+- 🔧 窗口底色改为深色 `#0f1322`，消除启动瞬间白闪
+
+#### 🖼️ 图片资源
+- ✨ 新增图片处理脚本 `tools/enhance-angen.ps1`（饱和/对比/锐化 + 轻量背景版生成，全流程可复现）
+- ✨ 新增 `renderer/img/angen.jpg`（美化全尺寸版）与 `renderer/img/angen-bg.jpg`（启动页背景，约 29KB）
+- 🛡️ 原图副本存档于 `originals/`（不参与打包），外部原图文件保持只读
+
+#### 🧹 工程清理与文档
+- 🔧 清理根目录误生成的 Windows 保留名文件 `nul`（该文件会导致 ripgrep 等工具扫描报错）
+- 📝 README 与当前代码同步：移除已废弃的多平台侧栏、头像上传等历史功能描述，补充图片资源管线说明
 
 ### v2.0.0 (2024-08-27)
 
@@ -133,12 +193,9 @@ npm install
    Remove-Item "$env:LOCALAPPDATA\electron\Cache" -Recurse -Force
    ```
 
-### Q: 头像数据保存在哪里？
+### Q: 如何更换启动页背景图？
 
-**A:** 保存在系统用户数据目录：
-- Windows: `C:\Users\用户名\AppData\Roaming\ai-web-desktop\`
-- macOS: `~/Library/Application Support/ai-web-desktop/`
-- Linux: `~/.config/ai-web-desktop/`
+**A:** 用新图替换 `originals/angen-src.jpg`（保持文件名不变），然后重新运行 `tools/enhance-angen.ps1` 即可。想微调效果，修改脚本头部的饱和度 / 对比度 / 锐化参数即可。
 
 ### Q: 如何保持 DeepSeek 的登录状态？
 
@@ -148,7 +205,7 @@ npm install
 
 **A:**
 - 定期重启应用清理缓存
-- 使用最新版本（v2.0.0 已优化内存管理）
+- 使用最新版本（已优化内存管理，退出时自动清理 BrowserView）
 
 ## 🤝 贡献
 

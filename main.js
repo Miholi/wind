@@ -1,87 +1,30 @@
 process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = '1'
 
-const { app, BrowserWindow, BrowserView, ipcMain, Tray, Menu, nativeImage, globalShortcut, shell, dialog } = require('electron')
+const { app, BrowserWindow, BrowserView, ipcMain, Tray, Menu, nativeImage, globalShortcut, shell } = require('electron')
 const path = require('path')
-const fs = require('fs')
-const { pathToFileURL } = require('url')
 
 let mainWindow = null
 let tray = null
 let isQuitting = false
 const registeredShortcut = 'CommandOrControl+Alt+D'
-const SIDEBAR_W = 204
+// 窗口在后台停留超过该时长后，唤起时自动重载网页以同步最新会话
+const RESYNC_THRESHOLD = 5 * 60 * 1000
+
+let lastHiddenAt = 0
 
 let views = new Map()
 let currentView = null
 let currentId = null
-// 渲染进程请求暂时隐藏视图时为 true（例如弹出窗口/裁剪头像弹窗打开期间），
-// 后台页面加载完成也不得把 BrowserView 盖回弹窗上方。
-let uiIntentHidden = false
-
-/* ============ 持久化：头像覆盖 ============ */
-
-function avatarsPath() {
-  return path.join(app.getPath('userData'), 'avatars.json')
-}
-
-// 归一化图片引用：URL 直接放行；旧数据里的裸盘符路径惰性迁移为 file:// URL；
-// 相对路径等其它形式原样放行。
-function normalizeImgSrc(img) {
-  if (typeof img !== 'string') return ''
-  const t = img.trim()
-  if (!t) return ''
-  // 裁剪导出的头像 data: URL 通常达数十至上百 KB，放宽上限；
-  //普通网络/本地引用仍限制长度，防止异常数据撑爆存储
-  const maxLen = /^data:/i.test(t) ? 2 * 1024 * 1024 : 4096
-  const s = t.slice(0, maxLen)
-  if (/^(https?|file|data):/i.test(s)) return s
-  if (/^[a-zA-Z]:[\\/]/.test(s) || s.startsWith('\\\\')) {
-    try {
-      return pathToFileURL(s).href
-    } catch {
-      return ''
-    }
-  }
-  return s
-}
-
-function readAvatars() {
-  try {
-    const raw = JSON.parse(fs.readFileSync(avatarsPath(), 'utf8'))
-    if (raw && typeof raw === 'object') {
-      const out = {}
-      for (const k of Object.keys(raw)) {
-        out[String(k).slice(0, 64)] = normalizeImgSrc(raw[k])
-      }
-      return out
-    }
-  } catch {
-    /* noop */
-  }
-  return {}
-}
-
-function writeAvatars(map) {
-  try {
-    const tmp = avatarsPath() + '.tmp'
-    fs.writeFileSync(tmp, JSON.stringify(map || {}, null, 2), 'utf8')
-    fs.renameSync(tmp, avatarsPath())
-    return true
-  } catch (e) {
-    console.error('writeAvatars failed:', e)
-    return false
-  }
-}
 
 /* ============ BrowserView 管理 ============ */
 
 function viewBounds() {
   const b = mainWindow.getContentBounds()
   return {
-    x: SIDEBAR_W,
+    x: 0,
     y: 0,
-    width: Math.max(1, b.width - SIDEBAR_W),
-    height: Math.max(1, b.height)
+    width: b.width,
+    height: b.height
   }
 }
 
@@ -89,11 +32,11 @@ function sendLoading(val) {
   if (mainWindow) mainWindow.webContents.send('view:loading', val)
 }
 
-// 加载结束（成功/失败）后的统一收口：尊重弹窗的隐藏意图，避免盖回弹窗上方
+// 加载结束（成功/失败）后的统一收口
 function settleLoad(p, v) {
   v._loaded = true
   if (currentId === p.id) {
-    if (!uiIntentHidden) showView(v)
+    showView(v)
     sendLoading(false)
   }
 }
@@ -125,7 +68,7 @@ function ensureView(p) {
     settleLoad(p, v)
   })
   v.webContents.on('dom-ready', () => {
-    if (currentId === p.id && v._loaded && !uiIntentHidden) sendLoading(false)
+    if (currentId === p.id && v._loaded) sendLoading(false)
   })
   // UA 内核版本跟随实际 Chromium 版本，避免与真实浏览器特征不符触发站点风控
   v.webContents.setUserAgent(
@@ -164,8 +107,8 @@ function selectPlatform(p) {
     showView(v)
     mainWindow.webContents.send('view:loading', false)
   } else {
-    // 修复：切换到未加载平台时同步移除旧视图，否则旧的 BrowserView 会盖住 loading 遮罩。
-    // 同时把 currentView 指向新视图（即使暂时不挂载），保证弹窗关闭后能正确恢复显示。
+    // 切换到未加载平台时同步移除旧视图，否则旧的 BrowserView 会盖住 loading 过渡页。
+    // 同时把 currentView 指向新视图（即使暂时不挂载），加载完成后能正确显示。
     if (currentView && currentView !== v && mainWindow.getBrowserViews().includes(currentView)) {
       mainWindow.removeBrowserView(currentView)
     }
@@ -173,13 +116,6 @@ function selectPlatform(p) {
     currentView = v
     mainWindow.webContents.send('view:loading', true)
   }
-}
-
-function applyViewVisibility() {
-  if (!mainWindow || !currentView) return
-  const added = mainWindow.getBrowserViews().includes(currentView)
-  if (!uiIntentHidden && !added) mainWindow.addBrowserView(currentView)
-  if (uiIntentHidden && added) mainWindow.removeBrowserView(currentView)
 }
 
 /* ============ 主窗口 / 托盘 / 菜单 ============ */
@@ -192,7 +128,7 @@ function createWindow() {
     minHeight: 560,
     show: false,
     autoHideMenuBar: true,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#0f1322',
     title: 'AI Web',
     icon: path.join(__dirname, 'assets', 'icon.ico'),
     webPreferences: {
@@ -217,12 +153,12 @@ function createWindow() {
   mainWindow.on('close', (e) => {
     if (!isQuitting && tray) {
       e.preventDefault()
-      mainWindow.hide()
+      hideMainWindow()
     }
   })
 
   mainWindow.on('minimize', () => {
-    if (tray) mainWindow.hide()
+    if (tray) hideMainWindow()
   })
 
   mainWindow.on('resize', () => {
@@ -230,11 +166,30 @@ function createWindow() {
   })
 }
 
+function hideMainWindow() {
+  if (!mainWindow) return
+  lastHiddenAt = Date.now()
+  mainWindow.hide()
+}
+
 function showMainWindow() {
   if (!mainWindow) return
+  const hiddenAt = lastHiddenAt
+  lastHiddenAt = 0
   if (mainWindow.isMinimized()) mainWindow.restore()
   mainWindow.show()
   mainWindow.focus()
+  // 在后台停留超过阈值时重载当前网页，同步其他客户端产生的新会话
+  if (
+    hiddenAt > 0 &&
+    Date.now() - hiddenAt > RESYNC_THRESHOLD &&
+    currentView &&
+    currentView._loaded &&
+    !currentView.webContents.isLoading() &&
+    !currentView.webContents.isDestroyed()
+  ) {
+    currentView.webContents.reload()
+  }
 }
 
 function createTray() {
@@ -370,57 +325,7 @@ function buildApplicationMenu() {
 
 /* ============ IPC ============ */
 
-ipcMain.handle('openExternal', (_event, url) => {
-  if (typeof url === 'string' && /^https?:\/\//i.test(url)) {
-    shell.openExternal(url)
-    return true
-  }
-  return false
-})
-
 ipcMain.on('view:select', (_event, p) => selectPlatform(p))
-
-ipcMain.handle('avatars:get', () => readAvatars())
-ipcMain.handle('avatars:set', (_event, id, img) => {
-  const map = readAvatars()
-  const key = String(id || '').slice(0, 64)
-  if (img) map[key] = normalizeImgSrc(img)
-  else delete map[key]
-  return { ok: writeAvatars(map), map: map }
-})
-
-ipcMain.handle('dialog:chooseImage', async () => {
-  if (!mainWindow) return null
-  try {
-    const result = await dialog.showOpenDialog(mainWindow, {
-      properties: ['openFile'],
-      filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'] }]
-    })
-    if (result.canceled || !result.filePaths || !result.filePaths[0]) return null
-    // 返回 data: URL：
-    // 1) 规避本地路径中的空格/中文导致的显示问题；
-    // 2) file:// 图像绘制到 canvas 会污染画布，导致裁剪结果无法 toDataURL 导出，
-    //    data: 引用不污染画布，渲染进程才能做自由裁剪。
-    const file = result.filePaths[0]
-    const stat = await fs.promises.stat(file)
-    if (!stat.isFile() || stat.size > 25 * 1024 * 1024) {
-      console.error('[aiweb] chooseImage: 文件不可读或超过 25MB 上限:', file)
-      return null
-    }
-    const buf = await fs.promises.readFile(file)
-    const ext = path.extname(file).replace('.', '').toLowerCase()
-    const MIME = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp' }
-    return 'data:' + (MIME[ext] || 'application/octet-stream') + ';base64,' + buf.toString('base64')
-  } catch (e) {
-    console.error('dialog:chooseImage failed:', e && e.message)
-    return null
-  }
-})
-
-ipcMain.on('view:setVisible', (_event, visible) => {
-  uiIntentHidden = !visible
-  applyViewVisibility()
-})
 
 function setupGlobalShortcut() {
   let ok = false

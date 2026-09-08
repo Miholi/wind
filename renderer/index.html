@@ -9,48 +9,24 @@
 <body>
   <div id="app">
 
-    <!-- ============ 平台侧边栏 ============ -->
-    <aside id="platform-sidebar">
-      <div class="sidebar-brand">
-        <img class="brand-logo" src="img/brand.png" alt="AI Web" />
-        <span class="brand-name">AI Web</span>
-      </div>
-      <div class="sidebar-title">平台</div>
-      <div id="platform-list"></div>
-    </aside>
-
     <!-- ============ 网页主区 ============ -->
     <section id="webview-view">
       <div id="webview-wrap">
-        <div id="webview-loading" class="webview-loading">
-          <img id="loading-avatar" class="loading-avatar" alt="" />
-          <div class="spinner"></div>
-          <span class="loading-text">正在加载…</span>
+        <!-- 启动/加载过渡页：BrowserView 未挂载或加载中时显示 -->
+        <div id="webview-loading" class="splash">
+          <!-- 照片背景 + 可读性遮罩（图片由 originals/angen-src.jpg 美化生成） -->
+          <div class="splash-backdrop" aria-hidden="true"></div>
+          <div class="splash-scrim" aria-hidden="true"></div>
+          <div class="splash-badge">
+            <div class="splash-ring"></div>
+            <img id="loading-avatar" class="splash-logo" src="img/platform-1.png" alt="AI Web" draggable="false" />
+          </div>
+          <div class="splash-name">AI Web</div>
+          <div id="loading-text" class="splash-status">正在连接 DeepSeek…</div>
         </div>
       </div>
     </section>
 
-  </div>
-
-  <!-- ============ 头像裁剪弹窗 ============ -->
-  <div id="crop-modal" class="modal-mask" hidden>
-    <div class="modal modal-crop">
-      <div class="modal-title">裁剪头像</div>
-      <div id="crop-stage" class="crop-stage">
-        <img id="crop-img" alt="" draggable="false" />
-        <div class="crop-ring"></div>
-      </div>
-      <div class="crop-zoombar">
-        <span class="crop-zoom-label">缩放</span>
-        <input type="range" id="crop-zoom" min="1" max="4" step="0.01" value="1" />
-      </div>
-      <div class="field-hint crop-hint">拖动图片调整位置 · 滚轮或滑块缩放</div>
-      <div id="crop-error" class="add-error" hidden></div>
-      <div class="modal-actions">
-        <button type="button" id="crop-cancel" class="btn ghost">取消</button>
-        <button type="button" id="crop-confirm" class="btn primary">确定</button>
-      </div>
-    </div>
   </div>
 
   <script src="js/app.js"></script>
